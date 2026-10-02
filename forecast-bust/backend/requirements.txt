@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+joblib
+pandas
+shap
+python-dotenv
+sqlalchemy
