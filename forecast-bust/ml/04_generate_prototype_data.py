@@ -20,6 +20,8 @@ regions = [
 ]
 
 n_rows = 5000
+forecast_start = "2024-01-01"
+forecast_end = "2024-12-31 18:00"
 
 # --------------------------------------------------
 # 2. Basic forecast information
@@ -28,9 +30,9 @@ n_rows = 5000
 df = pd.DataFrame({
     "region": np.random.choice(regions, n_rows),
     "date": pd.date_range(
-        start="2024-01-01",
+        start=forecast_start,
+        end=forecast_end,
         periods=n_rows,
-        freq="6h"
     ),
     "lead_day": np.random.randint(1, 11, n_rows)
 })
