@@ -1,26 +1,23 @@
 import apiClient from "./client";
 
+// Retained for the implemented legacy SHAP endpoint, which is keyed by region.
 export async function getRegions() {
   const response = await apiClient.get("/regions");
   return response.data;
 }
 
-export async function getPrediction(region, leadDay) {
-  const config = leadDay === undefined
-    ? undefined
-    : { params: { lead_day: leadDay } };
-  const response = await apiClient.get(
-    `/prediction/${encodeURIComponent(region)}`,
-    config,
-  );
+export async function getPrediction(latitude, longitude, leadDay = 5) {
+  const response = await apiClient.get("/real/prediction", {
+    params: { latitude, longitude, lead_day: leadDay },
+  });
 
   return response.data;
 }
 
-export async function getForecast(region) {
-  const response = await apiClient.get(
-    `/forecast/${encodeURIComponent(region)}`,
-  );
+export async function getForecast(latitude, longitude) {
+  const response = await apiClient.get("/real/forecast", {
+    params: { latitude, longitude },
+  });
 
   return response.data;
 }

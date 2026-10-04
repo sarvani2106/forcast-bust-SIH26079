@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { getRegions } from "../api/forecastApi";
-import { getExplainability } from "../api/explainabilityApi";
+import { useState } from "react";
+import { getRealExplainability } from "../api/explainabilityApi";
 import EmptyState from "../components/common/EmptyState";
 import ErrorState from "../components/common/ErrorState";
 import LoadingState from "../components/common/LoadingState";
@@ -9,18 +8,23 @@ import Header from "../components/layout/Header";
 import { NavLink } from "react-router-dom";
 
 const featureLabels = {
-  historical_mae: "Historical MAE",
-  weather_variability: "Weather Variability",
   lead_day: "Lead Day",
-  rainfall_forecast: "Rainfall Forecast",
+  lead_day_squared: "Lead Day Squared",
+  LATITUDE: "Latitude",
+  LONGITUDE: "Longitude",
+  latitude_abs: "Absolute Latitude",
+  longitude_abs: "Absolute Longitude",
+  forecast_rainfall: "Rainfall Forecast",
+  forecast_rainfall_squared: "Rainfall Forecast Squared",
+  log_forecast_rainfall: "Log Rainfall Forecast",
+  previous_forecast: "Previous Forecast",
   forecast_revision: "Forecast Revision",
   forecast_stability: "Forecast Stability",
-  previous_forecast: "Previous Forecast",
+  historical_mae: "Historical MAE",
 };
 
 function formatProbability(value) {
-  if (value === undefined || value === null) return null;
-
+  if (value === undefined || value === null) return "No data";
   return new Intl.NumberFormat("en-US", {
     style: "percent",
     maximumFractionDigits: 2,
@@ -28,252 +32,136 @@ function formatProbability(value) {
 }
 
 function formatFeatureName(feature) {
-  if (featureLabels[feature]) return featureLabels[feature];
-
-  if (feature.startsWith("weather_regime_")) {
-    const regime = feature.slice("weather_regime_".length).replaceAll("_", " ");
-    return `Weather Regime: ${regime}`;
-  }
-
-  return feature
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+  return featureLabels[feature] ?? feature.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function formatImpact(value) {
-  if (typeof value !== "number") return value;
-
-  return `${value > 0 ? "+" : ""}${value.toFixed(4)}`;
+  if (typeof value !== "number") return "No data";
+  return `${value > 0 ? "+" : ""}${value.toFixed(5)}`;
 }
 
 function Explainability() {
-  const [regions, setRegions] = useState([]);
-  const [selectedRegion, setSelectedRegion] = useState("");
+  const [coordinates, setCoordinates] = useState({ latitude: "", longitude: "" });
   const [leadDay, setLeadDay] = useState(5);
   const [explanation, setExplanation] = useState(null);
-  const [isRegionsLoading, setIsRegionsLoading] = useState(true);
-  const [isExplanationLoading, setIsExplanationLoading] = useState(false);
-  const [hasRegionsError, setHasRegionsError] = useState(false);
-  const [hasExplanationError, setHasExplanationError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [hasRequested, setHasRequested] = useState(false);
 
-  useEffect(() => {
-    let isCurrentRequest = true;
+  const loadExplanation = async (event) => {
+    event?.preventDefault();
+    if (!Number.isFinite(Number(coordinates.latitude)) || coordinates.latitude === "" ||
+        !Number.isFinite(Number(coordinates.longitude)) || coordinates.longitude === "") return;
 
-    getRegions()
-      .then((data) => {
-        if (!isCurrentRequest) return;
-
-        const availableRegions = data.regions;
-        setRegions(availableRegions);
-        setSelectedRegion(availableRegions[0] ?? "");
-      })
-      .catch(() => {
-        if (isCurrentRequest) {
-          setHasRegionsError(true);
-        }
-      })
-      .finally(() => {
-        if (isCurrentRequest) {
-          setIsRegionsLoading(false);
-        }
-      });
-
-    return () => {
-      isCurrentRequest = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedRegion) {
+    setHasRequested(true);
+    setIsLoading(true);
+    setHasError(false);
+    try {
+      const result = await getRealExplainability(
+        Number(coordinates.latitude),
+        Number(coordinates.longitude),
+        leadDay,
+      );
+      setExplanation(result);
+    } catch {
+      setHasError(true);
       setExplanation(null);
-      setIsExplanationLoading(false);
-      return undefined;
+    } finally {
+      setIsLoading(false);
     }
-
-    let isCurrentRequest = true;
-
-    setIsExplanationLoading(true);
-    setHasExplanationError(false);
-
-    getExplainability(selectedRegion, leadDay)
-      .then((data) => {
-        if (isCurrentRequest) {
-          setExplanation(data);
-        }
-      })
-      .catch(() => {
-        if (isCurrentRequest) {
-          setHasExplanationError(true);
-        }
-      })
-      .finally(() => {
-        if (isCurrentRequest) {
-          setIsExplanationLoading(false);
-        }
-      });
-
-    return () => {
-      isCurrentRequest = false;
-    };
-  }, [leadDay, selectedRegion]);
-
-  const isLoading = isRegionsLoading || isExplanationLoading;
+  };
 
   return (
     <div className="explainability-page">
-      <Header title="Explainability" />
+      <Header title="Model Explainability" description="SHAP contributions from the calibrated real-data model" context="Real September 2025 forecast grid · calibrated model" />
 
-      <section className="explainability-monitoring" aria-label="Forecast monitoring">
+      <form className="explainability-monitoring" aria-label="Real forecast point selection" onSubmit={loadExplanation}>
         <div className="explainability-monitoring-copy">
           <span className="dashboard-kicker">Forecast monitoring</span>
-          <p>Select a region and forecast lead day to inspect model contributions.</p>
+          <p>Enter an exact real forecast grid coordinate and lead day to inspect calibrated model contributions.</p>
         </div>
 
         <div className="explainability-selectors">
           <label className="explainability-select">
-            <span>Region</span>
-            <select
-              value={selectedRegion}
-              onChange={(event) => setSelectedRegion(event.target.value)}
-              disabled={isRegionsLoading || regions.length === 0}
-            >
-              <option value="" disabled>
-                Select a region
-              </option>
-              {regions.map((region) => (
-                <option key={region} value={region}>
-                  {region}
-                </option>
-              ))}
-            </select>
+            <span>Latitude</span>
+            <input type="number" step="any" required value={coordinates.latitude} onChange={(event) => setCoordinates((current) => ({ ...current, latitude: event.target.value }))} />
           </label>
-
+          <label className="explainability-select">
+            <span>Longitude</span>
+            <input type="number" step="any" required value={coordinates.longitude} onChange={(event) => setCoordinates((current) => ({ ...current, longitude: event.target.value }))} />
+          </label>
           <label className="explainability-select">
             <span>Lead Day</span>
-            <select
-              value={leadDay}
-              onChange={(event) => setLeadDay(Number(event.target.value))}
-              disabled={!selectedRegion}
-            >
+            <select value={leadDay} onChange={(event) => setLeadDay(Number(event.target.value))}>
               {Array.from({ length: 10 }, (_, index) => index + 1).map((day) => (
-                <option key={day} value={day}>
-                  Day {day}
-                </option>
+                <option key={day} value={day}>Day {day}</option>
               ))}
             </select>
           </label>
+          <button className="primary-button" type="submit" disabled={isLoading}>
+            {isLoading ? "Generating…" : "Generate explanation"}
+          </button>
         </div>
-      </section>
+      </form>
 
       {isLoading && <LoadingState />}
+      {!isLoading && hasError && <ErrorState message="Unable to load real-data SHAP explanation. Check that the coordinates match a real grid point and retry." />}
+      {!isLoading && !hasRequested && <EmptyState message="Enter a real grid coordinate to load its model prediction and SHAP factors." />}
+      {!isLoading && hasRequested && !hasError && !explanation && <EmptyState message="No real explanation data available for this selection." />}
 
-      {!isLoading && hasRegionsError && (
-        <ErrorState message="Unable to load regions." />
-      )}
+      {!isLoading && explanation && (
+        <>
+          <section className="explainability-decision card" aria-labelledby="model-decision-title">
+            <div className="explainability-section-header">
+              <div>
+                <span className="dashboard-kicker">Prediction context</span>
+                <h2 id="model-decision-title">Model Decision</h2>
+              </div>
+            </div>
+            <div className="explainability-decision-grid">
+              <div><span>Forecast Date</span><strong>{explanation.forecast_date ?? "No data"}</strong></div>
+              <div><span>Latitude / Longitude</span><strong>{explanation.latitude}, {explanation.longitude}</strong></div>
+              <div><span>Lead Day</span><strong>Day {explanation.lead_day}</strong></div>
+              <div><span>Risk</span><RiskBadge risk={explanation.risk} /></div>
+              <div><span>Bust Probability</span><strong>{formatProbability(explanation.bust_probability)}</strong></div>
+              <div><span>Confidence</span><strong>{formatProbability(explanation.confidence)}</strong></div>
+              <div><span>Prediction</span><strong>{explanation.bust_prediction ?? "No data"}</strong></div>
+            </div>
+          </section>
 
-      {!isLoading && !hasRegionsError && regions.length === 0 && (
-        <EmptyState message="No region selected." />
-      )}
-
-      {!isLoading && !hasRegionsError && selectedRegion && hasExplanationError && (
-        <ErrorState message="Unable to load explainability data." />
-      )}
-
-      {!isLoading &&
-        !hasRegionsError &&
-        selectedRegion &&
-        !hasExplanationError &&
-        explanation && (
-          <>
-            <section className="explainability-decision card" aria-labelledby="model-decision-title">
+          {explanation.factors?.length ? (
+            <section className="explainability-factors card" aria-labelledby="factors-title">
               <div className="explainability-section-header">
                 <div>
-                  <span className="dashboard-kicker">Prediction context</span>
-                  <h2 id="model-decision-title">Model Decision</h2>
+                  <span className="dashboard-kicker">Model contribution</span>
+                  <h2 id="factors-title">Top 5 SHAP Factors</h2>
+                  <p>Exact SHAP contributions for the calibrated model’s predicted bust probability.</p>
                 </div>
               </div>
-              <div className="explainability-decision-grid">
-                {explanation.region !== undefined && (
-                  <div>
-                    <span>Region</span>
-                    <strong>{explanation.region}</strong>
-                  </div>
-                )}
-                {explanation.lead_day !== undefined && (
-                  <div>
-                    <span>Lead Day</span>
-                    <strong>Day {explanation.lead_day}</strong>
-                  </div>
-                )}
-                {explanation.risk !== undefined && (
-                  <div>
-                    <span>Risk</span>
-                    <RiskBadge risk={explanation.risk} />
-                  </div>
-                )}
-                {explanation.bust_probability !== undefined && (
-                  <div>
-                    <span>Bust Probability</span>
-                    <strong>{formatProbability(explanation.bust_probability)}</strong>
-                  </div>
-                )}
-                {explanation.confidence !== undefined && (
-                  <div>
-                    <span>Confidence</span>
-                    <strong>{formatProbability(explanation.confidence)}</strong>
-                  </div>
-                )}
+              <div className="explainability-factor-list">
+                {explanation.factors.map((factor) => (
+                  <article className={`explainability-factor-row ${factor.direction === "increases" ? "is-positive" : factor.direction === "reduces" ? "is-negative" : "is-neutral"}`} key={factor.feature}>
+                    <div className="explainability-factor-heading">
+                      <strong>{formatFeatureName(factor.feature)}</strong>
+                      <span>Value {factor.feature_value ?? "No data"} · Impact <b>{formatImpact(factor.impact)}</b> · {factor.direction ?? "No data"}</span>
+                    </div>
+                    <p>{factor.explanation ?? "No data"}</p>
+                  </article>
+                ))}
               </div>
             </section>
+          ) : <EmptyState message="No SHAP factors available for this real forecast point." />}
 
-            {explanation.top_factors?.length ? (
-              <section className="explainability-factors card" aria-labelledby="factors-title">
-                <div className="explainability-section-header">
-                  <div>
-                    <span className="dashboard-kicker">Model contribution</span>
-                    <h2 id="factors-title">Top Contributing Factors</h2>
-                    <p>Features with the strongest influence on this prediction.</p>
-                  </div>
-                </div>
-                <div className="explainability-factor-list">
-                  {explanation.top_factors.map((factor, index) => (
-                    <article
-                      className={`explainability-factor-row ${
-                        factor.impact > 0 ? "is-positive" : "is-negative"
-                      }`}
-                      key={`${factor.feature}-${index}`}
-                    >
-                      <div className="explainability-factor-heading">
-                        <strong>{formatFeatureName(factor.feature)}</strong>
-                        <span>
-                          Impact <b>{formatImpact(factor.impact)}</b>
-                        </span>
-                      </div>
-                      <p>{factor.explanation}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : (
-              <EmptyState message="No explanation factors available." />
-            )}
+          <aside className="explainability-note" aria-labelledby="interpretation-title">
+            <span className="dashboard-kicker" id="interpretation-title">Model interpretation</span>
+            <p>SHAP values describe each feature’s contribution to the model output. They are model-derived reliability factors, not physical causes.</p>
+          </aside>
 
-            <aside className="explainability-note" aria-labelledby="interpretation-title">
-              <span className="dashboard-kicker" id="interpretation-title">
-                Model interpretation
-              </span>
-              <p>
-                These factors show how the model inputs influenced the selected
-                prediction. They represent model contributions and should not be
-                interpreted as independent causes.
-              </p>
-            </aside>
-
-            <NavLink className="explainability-analysis-link" to="/forecast">
-              View Forecast Analysis <span aria-hidden="true">→</span>
-            </NavLink>
-          </>
-        )}
+          <NavLink className="explainability-analysis-link" to="/forecast">
+            View Forecast Analysis <span aria-hidden="true">→</span>
+          </NavLink>
+        </>
+      )}
     </div>
   );
 }

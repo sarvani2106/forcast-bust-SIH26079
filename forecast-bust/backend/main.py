@@ -2,12 +2,17 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import joblib
 import pandas as pd
+import numpy as np
 import os
 import shap
-
+from backend.real_model import model, BUST_THRESHOLD
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from backend.real_data import get_latest_by_lead_day, get_real_data
+from backend.real_model import predict_real
+from backend.real_model import model as real_model
+from backend.real_model import FEATURES as REAL_FEATURES
 
 
 # ============================================================
@@ -131,6 +136,11 @@ def predict_row(row):
         "bust_probability": round(probability, 4),
         "confidence": round(confidence, 4),
         "risk": risk,
+        "weather_regime": row["weather_regime"],
+        "weather_variability": round(float(row["weather_variability"]), 4),
+        "forecast_revision": round(float(row["forecast_revision"]), 4),
+        "forecast_stability": round(float(row["forecast_stability"]), 4),
+        "historical_mae": round(float(row["historical_mae"]), 4),
         "stability_index": round(
             float(row["forecast_stability"]),
             4
@@ -266,6 +276,15 @@ def get_prediction(
             float(row["historical_mae"]),
             2
         ),
+        "weather_variability": round(
+            float(row["weather_variability"]),
+            2
+        ),
+        "forecast_stability": round(
+            float(row["forecast_stability"]),
+            4
+        ),
+        "weather_regime": row["weather_regime"],
 
         **prediction
     }
@@ -492,6 +511,18 @@ def get_risk_map(lead_day: int = Query(5, ge=1, le=10)):
             "historical_mae": round(
                 float(row["historical_mae"]),
                 2
+            ),
+            "forecast_revision": round(
+                float(row["forecast_revision"]),
+                2
+            ),
+            "forecast_stability": round(
+                float(row["forecast_stability"]),
+                4
+            ),
+            "previous_forecast": round(
+                float(row["previous_forecast"]),
+                2
             )
         })
 
@@ -637,48 +668,120 @@ def get_trend(
     }
 
 
-# ============================================================
-# FEATURE DESCRIPTIONS FOR SHAP
-# ============================================================
+def get_shap_values(model_input):
+    """Return class-1 SHAP values for one model input across SHAP versions."""
+    raw_values = explainer.shap_values(model_input)
 
-FEATURE_DESCRIPTIONS = {
+    if isinstance(raw_values, list):
+        return raw_values[1][0]
 
-    "historical_mae":
-        "Historical forecast error is contributing to uncertainty.",
+    values = raw_values[0]
+    if getattr(values, "ndim", 1) == 2:
+        values = values[:, 1]
+    return values.flatten()
 
-    "lead_day":
-        "Longer forecast lead time can increase prediction uncertainty.",
 
-    "rainfall_forecast":
-        "The predicted rainfall level is influencing forecast reliability.",
+def format_feature_value(feature, value):
+    if feature.startswith("weather_regime_"):
+        return "present" if value == 1 else "not present"
+    if feature == "lead_day":
+        return f"Day {int(value)}"
+    if feature == "forecast_stability":
+        return f"{float(value):.3f}"
+    return f"{float(value):.2f}"
 
-    "previous_forecast":
-        "The previous forecast value is influencing current reliability.",
 
-    "forecast_revision":
-        "The forecast has changed from the previous update.",
+def build_factor_explanation(feature, actual_value, impact):
+    direction = "increases" if impact > 0 else "reduces" if impact < 0 else "does not materially change"
+    value_text = format_feature_value(feature, actual_value)
+    if feature == "historical_mae":
+        subject = "Historical forecast error"
+        context = "forecast reliability"
+    elif feature == "forecast_revision":
+        subject = "Forecast revision"
+        context = "forecast uncertainty"
+    elif feature == "forecast_stability":
+        subject = "Forecast stability"
+        context = "forecast reliability"
+    elif feature == "weather_variability":
+        subject = "Weather variability"
+        context = "forecast uncertainty"
+    elif feature == "lead_day":
+        subject = "Forecast lead time"
+        context = "forecast uncertainty"
+    elif feature == "previous_forecast":
+        subject = "Previous forecast"
+        context = "forecast reliability"
+    elif feature == "rainfall_forecast":
+        subject = "Predicted rainfall"
+        context = "the model's bust-risk estimate"
+    else:
+        subject = feature.replace("weather_regime_", "Weather regime ")
+        context = "the model's bust-risk estimate"
 
-    "forecast_stability":
-        "Forecast stability is influencing the reliability estimate.",
+    return (
+        f"{subject} is {value_text} and {direction} {context}. "
+        f"Signed SHAP impact: {impact:+.4f}. This is a model-derived "
+        "reliability indicator, not proof of a physical meteorological cause."
+    )
 
-    "weather_variability":
-        "Higher weather variability can make the forecast less stable.",
 
-    "weather_regime_Normal":
-        "Current weather regime is classified as normal.",
-
-    "weather_regime_Heavy Rain":
-        "Heavy-rain conditions are influencing forecast reliability.",
-
-    "weather_regime_Monsoon":
-        "Monsoon conditions are influencing forecast reliability.",
-
-    "weather_regime_Cyclonic":
-        "Cyclonic conditions can increase forecast uncertainty.",
-
-    "weather_regime_Heat Wave":
-        "Heat-wave conditions are influencing forecast reliability."
-}
+def build_reliability_reasons(row, prediction):
+    """Describe available forecast-time indicators without inventing causes."""
+    reasons = []
+    indicators = [
+        (
+            "historical_mae",
+            "model-derived factor",
+            f"Historical forecast error is {float(row['historical_mae']):.2f}; "
+            "it reflects past forecast reliability for this input.",
+        ),
+        (
+            "forecast_revision",
+            "reliability indicator",
+            f"Forecast revision is {float(row['forecast_revision']):.2f}; "
+            "larger revisions indicate the forecast is changing more.",
+        ),
+        (
+            "forecast_stability",
+            "reliability indicator",
+            f"Forecast stability is {float(row['forecast_stability']):.3f}; "
+            "lower values indicate a less stable forecast.",
+        ),
+        (
+            "weather_variability",
+            "meteorological indicator",
+            f"Weather variability is {float(row['weather_variability']):.2f}; "
+            "it indicates changing conditions represented in the dataset.",
+        ),
+        (
+            "lead_day",
+            "reliability indicator",
+            f"Lead time is Day {int(row['lead_day'])}; longer horizons generally "
+            "provide less forecast certainty.",
+        ),
+    ]
+    for feature, category, message in indicators:
+        reasons.append(
+            {
+                "feature": feature,
+                "category": category,
+                "value": round(float(row[feature]), 4),
+                "message": message,
+            }
+        )
+    reasons.append(
+        {
+            "feature": "prediction",
+            "category": "model-derived factor",
+            "value": prediction["bust_probability"],
+            "message": (
+                f"The model estimates {prediction['bust_probability']:.1%} "
+                f"bust probability for the selected input."
+            ),
+        }
+    )
+    return reasons
 
 
 # ============================================================
@@ -704,46 +807,32 @@ def explain_prediction(
 
     model_input = prepare_model_input(row)
 
-    shap_values = explainer.shap_values(
-        model_input
-    )
-
-    # Handle different SHAP output formats
-    if isinstance(shap_values, list):
-
-        values = shap_values[1][0]
-
-    else:
-
-        values = shap_values[0]
-
-        if len(values.shape) == 2:
-
-            values = values[:, 1]
-
-    values = values.flatten()
+    values = get_shap_values(model_input)
 
     contributions = []
 
-    for feature, value in zip(
-        FEATURES,
-        values
-    ):
+    for feature, impact in zip(FEATURES, values):
+        actual_value = float(model_input.iloc[0][feature])
+        signed_impact = float(impact)
 
         contributions.append({
-
             "feature": feature,
-
-            "impact": round(
-                float(value),
-                4
+            "value": actual_value,
+            "shap_impact": round(signed_impact, 4),
+            "feature_value": actual_value,
+            "impact": round(signed_impact, 4),
+            "direction": (
+                "increases"
+                if signed_impact > 0
+                else "reduces"
+                if signed_impact < 0
+                else "neutral"
             ),
-
-            "explanation":
-                FEATURE_DESCRIPTIONS.get(
-                    feature,
-                    "This feature is influencing the prediction."
-                )
+            "explanation": build_factor_explanation(
+                feature,
+                actual_value,
+                signed_impact,
+            ),
         })
 
     # Sort by absolute impact
@@ -753,21 +842,17 @@ def explain_prediction(
     )
 
     prediction = predict_row(row)
+    top_factors = contributions[:5]
 
     return {
-
         "region": region,
-
         "lead_day": lead_day,
-
-        "bust_probability":
-            prediction["bust_probability"],
-
-        "risk":
-            prediction["risk"],
-
-        "top_factors":
-            contributions[:5]
+        "bust_probability": prediction["bust_probability"],
+        "confidence": prediction["confidence"],
+        "risk": prediction["risk"],
+        "factors": top_factors,
+        "top_factors": top_factors,
+        "reliability_reasons": build_reliability_reasons(row, prediction),
     }
 
 
@@ -862,4 +947,357 @@ def get_forecast_evolution(
         "lead_day": lead_day,
 
         "evolution": evolution
+    }
+_real_shap_explainer = None
+
+
+def get_real_shap_explainer():
+    """Build exact SHAP explanations for the calibrated real-model probability."""
+    global _real_shap_explainer
+
+    if _real_shap_explainer is None:
+        real_rows = get_real_data().sort_values(
+            ["forecast_date", "lead_day", "LATITUDE", "LONGITUDE"]
+        )
+        reference = real_rows.loc[:, REAL_FEATURES].iloc[[0]]
+
+        def calibrated_bust_probability(values):
+            model_input = pd.DataFrame(values, columns=REAL_FEATURES)
+            return real_model.predict_proba(model_input)[:, 1]
+
+        masker = shap.maskers.Independent(reference)
+        _real_shap_explainer = shap.Explainer(
+            calibrated_bust_probability,
+            masker,
+            algorithm="exact",
+        )
+
+    return _real_shap_explainer
+
+
+def explain_real_feature(feature, impact):
+    """Describe a model contribution without claiming physical causation."""
+    if impact > 0:
+        direction = "increases"
+        probability_direction = "higher"
+    elif impact < 0:
+        direction = "reduces"
+        probability_direction = "lower"
+    else:
+        direction = "neutral"
+        probability_direction = "unchanged"
+
+    labels = {
+        "lead_day": "Lead day",
+        "lead_day_squared": "Lead day squared",
+        "LATITUDE": "Latitude",
+        "LONGITUDE": "Longitude",
+        "latitude_abs": "Absolute latitude",
+        "longitude_abs": "Absolute longitude",
+        "forecast_rainfall": "Forecast rainfall",
+        "forecast_rainfall_squared": "Forecast rainfall squared",
+        "log_forecast_rainfall": "Log forecast rainfall",
+        "previous_forecast": "Previous forecast",
+        "forecast_revision": "Forecast revision",
+        "forecast_stability": "Forecast stability",
+        "historical_mae": "Historical MAE",
+    }
+    feature_name = labels.get(feature, feature.replace("_", " "))
+
+    if impact == 0:
+        explanation = f"{feature_name} did not shift the predicted bust probability for this row."
+    else:
+        explanation = (
+            f"This {feature_name.lower()} value contributed to {probability_direction} "
+            "predicted bust probability."
+        )
+
+    return direction, explanation
+
+
+@app.get("/real/explain")
+def real_explain(
+    latitude: float,
+    longitude: float,
+    lead_day: int = Query(5, ge=1, le=10),
+):
+    data = get_real_data()
+    coordinate_tolerance = 1e-4
+    coordinate_match = (
+        np.isclose(data["LATITUDE"].to_numpy(dtype=float), latitude, rtol=0, atol=coordinate_tolerance)
+        & np.isclose(data["LONGITUDE"].to_numpy(dtype=float), longitude, rtol=0, atol=coordinate_tolerance)
+        & (data["lead_day"].to_numpy(dtype=int) == lead_day)
+    )
+    matching_rows = data.loc[coordinate_match]
+
+    if matching_rows.empty:
+        raise HTTPException(
+            status_code=404,
+            detail="No real forecast grid point found for the requested coordinates.",
+        )
+
+    row = matching_rows.sort_values("forecast_date").iloc[-1]
+    model_input = pd.DataFrame(
+        [[row[feature] for feature in REAL_FEATURES]],
+        columns=REAL_FEATURES,
+    )
+    prediction = predict_real(row)
+    explanation = get_real_shap_explainer()(
+        model_input,
+        max_evals=2 ** len(REAL_FEATURES),
+    )
+    impacts = np.asarray(explanation.values).reshape(-1)
+
+    factors = []
+    for feature, impact in zip(REAL_FEATURES, impacts):
+        signed_impact = float(impact)
+        direction, description = explain_real_feature(feature, signed_impact)
+        factors.append({
+            "feature": feature,
+            "feature_value": float(row[feature]),
+            "impact": signed_impact,
+            "direction": direction,
+            "explanation": description,
+        })
+
+    factors.sort(key=lambda factor: abs(factor["impact"]), reverse=True)
+    top_factors = factors[:5]
+
+    return {
+        "latitude": float(row["LATITUDE"]),
+        "longitude": float(row["LONGITUDE"]),
+        "lead_day": int(row["lead_day"]),
+        "forecast_date": str(row["forecast_date"].date()),
+        **prediction,
+        "factors": top_factors,
+    }
+
+
+@app.get("/real/prediction")
+def real_prediction(
+    latitude: float,
+    longitude: float,
+    lead_day: int = Query(5, ge=1, le=10)
+):
+    data = get_latest_by_lead_day(lead_day)
+
+    if data.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No real forecast data for lead day {lead_day}"
+        )
+
+    # Find nearest available grid point
+    distances = (
+        (data["LATITUDE"] - latitude) ** 2
+        + (data["LONGITUDE"] - longitude) ** 2
+    )
+
+    index = distances.idxmin()
+    row = data.loc[index]
+
+    prediction = predict_real(row)
+
+    return {
+        "forecast_date": str(row["forecast_date"].date()),
+        "latitude": float(row["LATITUDE"]),
+        "longitude": float(row["LONGITUDE"]),
+        "lead_day": int(row["lead_day"]),
+
+        "rainfall_forecast": round(
+            float(row["forecast_rainfall"]), 2
+        ),
+
+        "previous_forecast": round(
+            float(row["previous_forecast"]), 2
+        ),
+
+        "forecast_revision": round(
+            float(row["forecast_revision"]), 2
+        ),
+
+        "historical_mae": round(
+            float(row["historical_mae"]), 2
+        ),
+
+        **prediction
+    }
+@app.get("/real/forecast")
+def real_forecast(
+    latitude: float,
+    longitude: float
+):
+    forecasts = []
+
+    for lead_day in range(1, 11):
+
+        data = get_latest_by_lead_day(lead_day)
+
+        if data.empty:
+            continue
+
+        # Find nearest available grid point
+        distances = (
+            (data["LATITUDE"] - latitude) ** 2
+            + (data["LONGITUDE"] - longitude) ** 2
+        )
+
+        index = distances.idxmin()
+        row = data.loc[index]
+
+        prediction = predict_real(row)
+
+        forecasts.append({
+            "forecast_date": str(
+                row["forecast_date"].date()
+            ),
+
+            "latitude": float(
+                row["LATITUDE"]
+            ),
+
+            "longitude": float(
+                row["LONGITUDE"]
+            ),
+
+            "lead_day": int(
+                row["lead_day"]
+            ),
+
+            "rainfall_forecast": round(
+                float(row["forecast_rainfall"]),
+                2
+            ),
+
+            "previous_forecast": round(
+                float(row["previous_forecast"]),
+                2
+            ),
+
+            "forecast_revision": round(
+                float(row["forecast_revision"]),
+                2
+            ),
+
+            "historical_mae": round(
+                float(row["historical_mae"]),
+                2
+            ),
+
+            "forecast_stability": round(
+                float(row["forecast_stability"]),
+                4
+            ),
+
+            **prediction
+        })
+
+    if not forecasts:
+        raise HTTPException(
+            status_code=404,
+            detail="No real forecast data available"
+        )
+
+    return {
+        "requested_latitude": latitude,
+        "requested_longitude": longitude,
+        "forecast_days": forecasts
+    }
+@app.get("/real/risk-map")
+def real_risk_map(
+    lead_day: int = Query(5, ge=1, le=10)
+):
+    data = get_latest_by_lead_day(lead_day)
+
+    if data.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No real forecast data for lead day {lead_day}"
+        )
+
+    # Features expected by the calibrated real model
+    model_input = data[[
+        "lead_day",
+        "lead_day_squared",
+        "LATITUDE",
+        "LONGITUDE",
+        "latitude_abs",
+        "longitude_abs",
+        "forecast_rainfall",
+        "forecast_rainfall_squared",
+        "log_forecast_rainfall",
+        "previous_forecast",
+        "forecast_revision",
+        "forecast_stability",
+        "historical_mae"
+    ]].copy()
+
+    # Import final calibrated model
+    from backend.real_model import model, BUST_THRESHOLD
+
+    probabilities = model.predict_proba(
+        model_input
+    )[:, 1]
+
+    points = []
+
+    for (_, row), probability in zip(
+        data.iterrows(),
+        probabilities
+    ):
+        probability = float(probability)
+
+        if probability >= 0.60:
+            risk = "HIGH"
+        elif probability >= BUST_THRESHOLD:
+            risk = "MODERATE"
+        else:
+            risk = "LOW"
+
+        bust = probability >= BUST_THRESHOLD
+
+        confidence = (
+            probability
+            if bust
+            else 1 - probability
+        )
+
+        points.append({
+            "latitude": round(
+                float(row["LATITUDE"]), 4
+            ),
+            "longitude": round(
+                float(row["LONGITUDE"]), 4
+            ),
+            "rainfall_forecast": round(
+                float(row["forecast_rainfall"]), 2
+            ),
+            "forecast_revision": round(
+                float(row["forecast_revision"]), 2
+            ),
+            "historical_mae": round(
+                float(row["historical_mae"]), 2
+            ),
+            "forecast_stability": round(
+                float(row["forecast_stability"]), 4
+            ),
+            "bust_probability": round(
+                probability, 4
+            ),
+            "confidence": round(
+                confidence, 4
+            ),
+            "risk": risk,
+            "bust_prediction": (
+                "BUST" if bust else "NORMAL"
+            )
+        })
+
+    return {
+        "forecast_date": str(
+            data["forecast_date"].iloc[0].date()
+        ),
+        "lead_day": lead_day,
+        "total_points": len(points),
+        "points": points
     }

@@ -1,4 +1,4 @@
-function Header({ title = "Forecast Reliability Engine" }) {
+function Header({ title = "Forecast Reliability Engine", description = "AI-based medium-range forecast bust detection", context = "Historical NCMRWF Forecast Data" }) {
   return (
     <header
       className="app-header"
@@ -28,9 +28,10 @@ function Header({ title = "Forecast Reliability Engine" }) {
             fontSize: "var(--font-size-secondary)",
           }}
         >
-          AI-Based Medium-Range Forecast Bust Detection
+          {description}
         </p>
       </div>
+      {context && <span className="header-context">{context}</span>}
     </header>
   );
 }

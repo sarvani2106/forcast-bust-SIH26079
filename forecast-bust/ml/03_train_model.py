@@ -15,13 +15,12 @@ print("Dataset shape:", df.shape)
 
 
 # --------------------------------------------------
-# 2. Select ML features
+# 2. Select ML features available at prediction time
 # --------------------------------------------------
 
 features = [
     "lead_day",
     "rainfall_forecast",
-    "rainfall_error",
     "historical_error",
     "forecast_revision",
     "forecast_stability"

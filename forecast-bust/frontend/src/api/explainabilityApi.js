@@ -1,13 +1,8 @@
 import apiClient from "./client";
 
-export async function getExplainability(region, leadDay) {
-  const config = leadDay === undefined
-    ? undefined
-    : { params: { lead_day: leadDay } };
-  const response = await apiClient.get(
-    `/explain/${encodeURIComponent(region)}`,
-    config,
-  );
-
+export async function getRealExplainability(latitude, longitude, leadDay) {
+  const response = await apiClient.get("/real/explain", {
+    params: { latitude, longitude, lead_day: leadDay },
+  });
   return response.data;
 }

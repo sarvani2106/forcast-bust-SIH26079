@@ -1472,7 +1472,8 @@
   font-weight: 600;
 }
 
-.explainability-select select {
+.explainability-select select,
+.explainability-select input {
   width: 100%;
   height: 42px;
   border: 1px solid var(--color-border);
@@ -1481,6 +1482,10 @@
   background: var(--color-card-background);
   color: var(--color-text-primary);
   cursor: pointer;
+}
+
+.explainability-select input {
+  cursor: text;
 }
 
 .explainability-select select:focus {
@@ -1933,4 +1938,51 @@
   .api-endpoint-card {
     padding: var(--space-4);
   }
+}
+/* Premium reliability workspace refinements */
+.header-context { margin-left: auto; max-width: 360px; color: var(--color-text-muted); font-size: 12px; text-align: right; }
+.sidebar-nav a[aria-current='page'] { background: #D8EBFF; border-color: transparent; color: #1264C4; box-shadow: none; }
+.sidebar-nav a[aria-current='page'] svg { color: #1677E8; }
+.dashboard-summary-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.dashboard-map-section .dashboard-section-heading { margin-bottom: 12px; }
+.selected-point-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px; }
+.horizon-strip { display: grid; grid-template-columns: repeat(10, minmax(86px, 1fr)); gap: 8px; overflow-x: auto; padding: 0 16px 16px; }
+.horizon-day { display: flex; min-height: 96px; flex-direction: column; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; background: #fff; }
+.horizon-day > span { color: var(--color-text-muted); font-size: 11px; }
+.horizon-day > strong { font-size: 16px; }
+.horizon-day.is-selected { border-color: var(--color-primary); background: #F1F7FF; }
+.forecast-analysis-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.coordinate-controls { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.coordinate-controls label { display: flex; flex-direction: column; gap: 5px; color: var(--color-text-muted); font-size: 12px; }
+.coordinate-controls input { width: 150px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-primary); }
+.lead-day-selector { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.lead-day-selector button { flex: 0 0 auto; min-height: 34px; padding: 6px 12px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text-primary); font-size: 12px; }
+.lead-day-selector button.is-selected { border-color: var(--color-primary); background: var(--color-primary); color: #fff; }
+.forecast-chart-card { margin: 20px 0; }
+.forecast-chart-area { height: 280px; padding: 18px 22px; }
+.highest-risk-note { color: var(--color-text-secondary); font-size: 12px; }
+.forecast-table-wrap { overflow-x: auto; }
+.forecast-reliability-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+.forecast-reliability-table th, .forecast-reliability-table td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); text-align: left; white-space: nowrap; }
+.forecast-reliability-table th { color: var(--color-text-muted); font-size: 11px; font-weight: 600; }
+.forecast-reliability-table td { font-size: 13px; }
+.forecast-reliability-table tr:last-child td { border-bottom: 0; }
+.forecast-reliability-table tr.is-highest-risk { background: #FFF8F6; }
+.forecast-analysis-page > .card { margin-bottom: 18px; overflow: hidden; }
+.api-reference-intro { margin-bottom: 20px; padding: 16px 18px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.api-reference-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 14px; }
+.api-endpoint-card { padding: 18px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; box-shadow: var(--shadow-card); }
+.api-endpoint-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.api-method-badge { padding: 4px 8px; border-radius: 5px; background: #E8F5EF; color: #168357; font-size: 11px; font-weight: 700; }
+.api-endpoint-path { overflow-wrap: anywhere; color: var(--color-text-primary); font-weight: 600; }
+.api-detail-block { margin-top: 14px; }
+.api-detail-block h4 { margin-bottom: 6px; color: var(--color-text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.api-response-fields { overflow-wrap: anywhere; font-family: var(--font-family-mono); font-size: 12px; }
+@media (max-width: 1024px) { .dashboard-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 768px) {
+  .header-context { margin-left: 0; text-align: left; }
+  .selected-point-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .forecast-chart-area { height: 230px; padding: 12px; }
+  .coordinate-controls { align-items: stretch; }
+  .coordinate-controls label, .coordinate-controls input { width: 100%; }
 }

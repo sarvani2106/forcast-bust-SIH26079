@@ -1,3 +1,23 @@
 .env
 __pycache__/
 *.pyc
+# Large datasets
+data/raw/
+data/processed/
+
+# Trained models
+models/*.pkl
+models/*.joblib
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.venv/
+venv/
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

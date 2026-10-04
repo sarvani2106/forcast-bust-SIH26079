@@ -56,6 +56,7 @@ function HistoricalPerformance() {
 
         const availableRegions = data.regions;
         setRegions(availableRegions);
+        if (availableRegions[0]) setIsTrendLoading(true);
         setSelectedRegion(availableRegions[0] ?? "");
       })
       .catch(() => {
@@ -76,15 +77,10 @@ function HistoricalPerformance() {
 
   useEffect(() => {
     if (!selectedRegion) {
-      setTrend(null);
-      setIsTrendLoading(false);
       return undefined;
     }
 
     let isCurrentRequest = true;
-
-    setIsTrendLoading(true);
-    setHasTrendError(false);
 
     getTrend(selectedRegion, leadDay)
       .then((data) => {
@@ -128,7 +124,7 @@ function HistoricalPerformance() {
 
   return (
     <div className="historical-performance-page">
-      <Header title="Historical Performance" />
+      <Header title="Forecast Reliability Trend" description="Historical forecast behavior for a selected region and lead day" context="Legacy region-based trend endpoint · not September 2025 NCMRWF/IMD verification data" />
 
       <section className="historical-monitoring" aria-label="Forecast monitoring">
         <div className="historical-monitoring-copy">
@@ -143,7 +139,11 @@ function HistoricalPerformance() {
             <span>Region</span>
             <select
               value={selectedRegion}
-              onChange={(event) => setSelectedRegion(event.target.value)}
+              onChange={(event) => {
+                setIsTrendLoading(true);
+                setHasTrendError(false);
+                setSelectedRegion(event.target.value);
+              }}
               disabled={isRegionsLoading || regions.length === 0}
             >
               <option value="" disabled>
@@ -161,7 +161,11 @@ function HistoricalPerformance() {
             <span>Lead Day</span>
             <select
               value={leadDay}
-              onChange={(event) => setLeadDay(Number(event.target.value))}
+              onChange={(event) => {
+                setIsTrendLoading(true);
+                setHasTrendError(false);
+                setLeadDay(Number(event.target.value));
+              }}
               disabled={!selectedRegion}
             >
               {Array.from({ length: 10 }, (_, index) => index + 1).map((day) => (
@@ -197,7 +201,7 @@ function HistoricalPerformance() {
             <div className="historical-records-header">
               <div>
                 <span className="dashboard-kicker">Historical performance</span>
-                <h2 id="trend-title">Historical Forecast Records</h2>
+            <h2 id="trend-title">Historical Reliability Observations</h2>
                 <p>{selectedRegion} · Lead Day {leadDay}</p>
                 <span className="historical-context-note">
                   Historical observations for the selected forecast lead day.
