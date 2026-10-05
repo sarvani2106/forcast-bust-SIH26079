@@ -5,7 +5,6 @@ import Dashboard from "./pages/Dashboard";
 import ForecastAnalysis from "./pages/ForecastAnalysis";
 import HistoricalPerformance from "./pages/HistoricalPerformance";
 import Explainability from "./pages/Explainability";
-import ApiReference from "./pages/ApiReference";
 import "./App.css";
 
 function AppShell() {
@@ -31,7 +30,6 @@ function App() {
           <Route path="/forecast" element={<ForecastAnalysis />} />
           <Route path="/historical" element={<HistoricalPerformance />} />
           <Route path="/explainability" element={<Explainability />} />
-          <Route path="/api" element={<ApiReference />} />
         </Route>
       </Routes>
     </BrowserRouter>

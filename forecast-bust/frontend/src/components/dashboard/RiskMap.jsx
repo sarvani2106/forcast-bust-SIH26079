@@ -4,6 +4,7 @@ import {
   GeoJSON,
   MapContainer,
   Popup,
+  TileLayer,
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
@@ -21,6 +22,25 @@ const riskColors = {
 };
 
 const unknownColor = "#D9E2EC";
+const cartoTileUrlTemplate = import.meta.env.VITE_CARTO_TILE_URL?.trim();
+const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY?.trim();
+
+function getCartoTileUrl() {
+  if (!cartoTileUrlTemplate) {
+    return null;
+  }
+
+  const tileUrl = cartoTileUrlTemplate.replace(
+    /%7B([zxy])%7D/gi,
+    "{$1}",
+  );
+
+  if (!cartoApiKey || /[?&]key=/.test(tileUrl)) {
+    return tileUrl;
+  }
+
+  return `${tileUrl}${tileUrl.includes("?") ? "&" : "?"}key=${encodeURIComponent(cartoApiKey)}`;
+}
 
 function formatProbability(value) {
   if (value === undefined || value === null) {
@@ -201,6 +221,7 @@ function RiskMap({
   const points = Array.isArray(riskMap?.points)
     ? riskMap.points
     : [];
+  const cartoTileUrl = getCartoTileUrl();
 
   if (isLoading) {
     return <LoadingState />;
@@ -228,6 +249,26 @@ function RiskMap({
   return (
     <div className="risk-map-shell">
       <div className="risk-map-frame">
+        {!cartoTileUrl && (
+          <div
+            role="alert"
+            style={{
+              position: "absolute",
+              top: "var(--space-3)",
+              right: "var(--space-3)",
+              left: "var(--space-3)",
+              zIndex: 1000,
+              padding: "var(--space-2) var(--space-3)",
+              background: "#FFF4D6",
+              border: "1px solid #E8C66A",
+              borderRadius: "var(--radius-sm)",
+              color: "#6B4F00",
+              fontSize: "12px",
+            }}
+          >
+            CARTO map tiles are not configured. Add VITE_CARTO_TILE_URL and VITE_CARTO_API_KEY to frontend/.env.
+          </div>
+        )}
         <MapContainer
           className="risk-map"
           bounds={indiaBounds}
@@ -250,6 +291,13 @@ function RiskMap({
           />
 
           <FitGeoJsonBounds bounds={indiaBounds} />
+
+          {cartoTileUrl && (
+            <TileLayer
+              attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+              url={cartoTileUrl}
+            />
+          )}
 
           {/* Real ML grid-point predictions rendered as Leaflet CircleMarkers. */}
           <RiskPoints points={points} onSelectPoint={onSelectPoint} />

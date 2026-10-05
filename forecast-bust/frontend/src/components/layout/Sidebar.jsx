@@ -2,7 +2,6 @@ import {
   Activity,
   BrainCircuit,
   CloudSun,
-  Code2,
   History,
   LayoutDashboard,
 } from "lucide-react";
@@ -17,7 +16,6 @@ const navigationItems = [
     icon: History,
   },
   { label: "Explainability", to: "/explainability", icon: BrainCircuit },
-  { label: "API Reference", to: "/api", icon: Code2 },
 ];
 
 function Sidebar() {

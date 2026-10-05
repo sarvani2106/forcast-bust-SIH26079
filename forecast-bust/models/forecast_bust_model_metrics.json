@@ -1,0 +1,78 @@
+{
+  "validation": "chronological 80/20 holdout",
+  "feature_columns": [
+    "lead_day",
+    "rainfall_forecast",
+    "previous_forecast",
+    "historical_mae",
+    "weather_variability",
+    "forecast_revision",
+    "forecast_stability",
+    "weather_regime_Normal",
+    "weather_regime_Heavy Rain",
+    "weather_regime_Monsoon",
+    "weather_regime_Cyclonic",
+    "weather_regime_Heat Wave"
+  ],
+  "class_distribution": {
+    "0": 4111,
+    "1": 889
+  },
+  "existing_model": {
+    "accuracy": 0.791,
+    "precision": 0.4653,
+    "recall": 0.8703,
+    "f1": 0.6064,
+    "roc_auc": 0.8964,
+    "confusion_matrix": [
+      [
+        630,
+        185
+      ],
+      [
+        24,
+        161
+      ]
+    ]
+  },
+  "candidate_model": {
+    "accuracy": 0.726,
+    "precision": 0.3725,
+    "recall": 0.7027,
+    "f1": 0.4869,
+    "roc_auc": 0.7765,
+    "confusion_matrix": [
+      [
+        596,
+        219
+      ],
+      [
+        55,
+        130
+      ]
+    ]
+  },
+  "selected_model": "existing",
+  "selected_metrics": {
+    "accuracy": 0.791,
+    "precision": 0.4653,
+    "recall": 0.8703,
+    "f1": 0.6064,
+    "roc_auc": 0.8964,
+    "confusion_matrix": [
+      [
+        630,
+        185
+      ],
+      [
+        24,
+        161
+      ]
+    ]
+  },
+  "leakage_excluded": [
+    "rainfall_actual",
+    "rainfall_error",
+    "bust"
+  ]
+}
